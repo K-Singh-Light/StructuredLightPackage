@@ -42,7 +42,7 @@ class Mode(object):  # Generates a scalar mode LG, HG or BG (idx2 corresponds to
                       np.exp(1j * l_idx * TH) * \
                       scipy.special.assoc_laguerre(2 * (R ** 2 / w0 ** 2), p_idx, abs(l_idx))
 
-                out = out / np.max(out)
+                #out = out / np.max(out)
 
         if self.mode == 'HG':
                 X, Y = self.X, self.Y
@@ -55,7 +55,7 @@ class Mode(object):  # Generates a scalar mode LG, HG or BG (idx2 corresponds to
                       scipy.special.eval_hermite(m_idx, (np.sqrt(2) * Y) / w0) * \
                       np.exp(-(X ** 2 + Y ** 2) / w0 ** 2)
 
-                out = out / np.max(out)
+                #out = out / np.max(out)
 
         if self.mode == 'BG':
             R, TH = np.sqrt(self.X ** 2 + self.Y ** 2), np.arctan2(self.Y, self.X)
@@ -66,7 +66,7 @@ class Mode(object):  # Generates a scalar mode LG, HG or BG (idx2 corresponds to
                   np.exp(1j * l_idx * TH) * \
                   np.exp(-(R ** 2 / w0 ** 2))
 
-            out = out / np.max(out)
+            #out = out / np.max(out)
 
         return out
 
@@ -111,32 +111,45 @@ class VectorMode(object):  # Generates a vector mode as a superposition of two s
             S2 = 2*ID - S0
             S3 = IR - IL
 
-        return S0, S1, S2, S3
+            return S0, S1, S2, S3
 
 
-def SOP(S0, S1, S2, S3, elres, dx, colmap):
+def SOP(S0, S1, S2, S3, elres, dx, intmap, sopmap):
 
     s0, s1, s2, s3 = resize(S0, (elres, elres), anti_aliasing=True), resize(S1, (elres, elres), anti_aliasing=True), \
                      resize(S2, (elres, elres), anti_aliasing=True), resize(S3, (elres, elres), anti_aliasing=True)
+                     
+    s1, s2, s3 = s1*s0, s2*s0, s3*s0 
 
     L_hyp = np.hypot(s1, s2)
-    h = np.sqrt((np.sqrt(s1 ** 2 + s2 ** 2 + s3 ** 2) - L_hyp) / 2) * dx  # Semi-minor axis
-    w = np.sqrt((np.sqrt(s1 ** 2 + s2 ** 2 + s3 ** 2) + L_hyp) / 2) * dx  # Semi-major axis
+    h = np.sqrt((np.sqrt(s1 ** 2 + s2 ** 2 + s3 ** 2) - L_hyp) / 2)*np.shape(S0)[0]/elres # Semi-minor axis
+    w = np.sqrt((np.sqrt(s1 ** 2 + s2 ** 2 + s3 ** 2) + L_hyp) / 2)*np.shape(S0)[0]/elres # Semi-major axis
     Psi = np.angle(s1 + 1j * s2) / 2  # Ellipse orientation angle
     Ha = np.sign(s3)  # Circular polarisation handedness (allows for inhomogeneous handedness)
+    
+    ha_temp=s3;
+    for i in range(0,h.shape[0]):
+        for j in range(0,h.shape[1]):
+            if abs(ha_temp[i,j])<=0.27:
+                ha_temp[i,j]=0
+            else:
+                ha_temp[i,j]=np.sign(s3[i,j])
+                
+    Ha = ha_temp
 
     # Ellipses Plotting #
 
-    x = np.linspace(-elres / 2, elres / 2, elres)
+    x = np.linspace(0, elres, elres)*np.shape(S0)[0]/elres
     X, Y = np.meshgrid(x, x)
     #
-    XY = np.column_stack((X.ravel(), -Y.ravel())) * dx
+    XY = np.column_stack((X.ravel(), Y.ravel()))
     #
     fig, ax = plt.subplots()
     ax.set_facecolor('white')
+    ax.imshow(S0, intmap)
     #
     ec = EllipseCollection(w, h, np.rad2deg(Psi), units='xy', offsets=XY,
-                           transOffset=ax.transData, cmap=colmap, clim=[-1, 1], facecolors='none', lw=3)
+                           transOffset=ax.transData, cmap=sopmap, clim=[-1, 1], facecolors='none', lw=3)
     ec.set_array(Ha.ravel())
     #
     ax.add_collection(ec)
@@ -341,4 +354,42 @@ def Zernike(n, m, rho, PHI, rho_max):
     out = Z
 
     return out
+
+def FractionalOAM(X, Y, w0, M, a, th, N):
+
+    
+    m = np.floor(M)
+    mu = M/np.floor(M)
+    U = np.zeros_like(X)
+    R, TH = np.sqrt(X**2 + Y**2), np.arctan2(Y, X)
+    
+    l_range = np.linspace(int(M - N/2), int(M + N/2) - 1, int(N))
+    c, p = np.zeros_like(l_range, dtype=complex), np.zeros_like(l_range)
+    LG = np.zeros_like(X)
+    count = 0
+    for ldx in l_range:
+        ldx = int(ldx)
+        c[count] = np.exp(-1j*mu*a)*((1j*np.exp(1j*(M-ldx)*th))/
+                                (2*np.pi*(M-ldx)))*(1 - np.exp(1j*2*np.pi*mu))*(
+                                np.exp(1j*a*(m-ldx)))
+                                    
+                                         
+        l_idx, p_idx = int(ldx), int(np.floor((abs(M) + (N/2) - abs(ldx))/2))*0
+        p[count] = p_idx*0       
+
+        LG = np.sqrt((2 * math.factorial(p_idx)) / (math.pi * math.factorial(abs(l_idx) + p_idx))) * \
+                      ((np.sqrt(2) * R) / w0) ** abs(l_idx) * \
+                      np.exp(-(R / w0) ** 2) * \
+                      np.exp(1j * l_idx * TH) * \
+                      scipy.special.assoc_laguerre(2 * (R ** 2 / w0 ** 2), p_idx, abs(l_idx))
+
+        LG = LG / np.max(LG)
+                                
+        U = U + c[count]*LG
+        count += 1
+        
+    return U, c, p
+                                          
+        
+        
 
