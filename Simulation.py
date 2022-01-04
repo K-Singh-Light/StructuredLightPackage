@@ -7,6 +7,9 @@ from matplotlib.collections import EllipseCollection
 import math
 from numpy.random import randn
 from numpy.fft import fft2
+import plotly.graph_objects as go
+import plotly.io as pio
+pio.renderers.default='browser'
 
 def Grid(H, V, dx):  # Generates a real space grid of H x V pixels size dx (in m)
     x = np.linspace(-H/2, H/2, H)*dx
@@ -21,6 +24,33 @@ def Cart2Pol(X, Y):
     
     return R, TH
 
+def FullLG(R, TH, l_idx, p_idx, w0, z, wl):
+        zR = np.pi*w0**2/wl
+        wz = w0*np.sqrt(1 + (z/zR)**2)
+        Rz = z*(1 + (zR/z)**2)
+        G = np.arctan2(z,zR)
+        k = 2*np.pi/wl
+        
+        LG = (w0/wz)*np.sqrt(2*math.factorial(p_idx)/(np.pi*math.factorial(abs(l_idx) + p_idx))) * \
+             (np.sqrt(2)*R/wz)**abs(l_idx) * \
+             scipy.special.assoc_laguerre(2 * (R ** 2 / wz ** 2), p_idx, abs(l_idx)) * \
+             np.exp(1j*(abs(l_idx) + 2*p_idx + 1)*G) * \
+             np.exp(-R**2/wz**2) * \
+             np.exp(-1j*k*R**2/(2*Rz)) * \
+             np.exp(1j*l_idx*TH)
+             
+        return LG    
+    
+def FullBG(R, TH, w0, l_idx, kr, wl, z): 
+    k = 2*np.pi/wl
+    kz = np.sqrt(k**2 - kr**2)
+    
+    BG = scipy.special.jv(abs(l_idx), kr * R) * \
+                  np.exp(1j * l_idx * TH) * \
+                  np.exp(-(R ** 2 / w0 ** 2)) *\
+                  np.exp(1j*kz*z)
+                  
+    return BG
 
 class Mode(object):  # Generates a scalar mode LG, HG or BG (idx2 corresponds to radial wavevector comp. for BG)
     def __new__(self, X, Y, idx1, idx2, w0, mode):
@@ -80,7 +110,6 @@ class VectorMode(object):  # Generates a vector mode as a superposition of two s
         self.S1 = []
         self.S2 = []
         self.S3 = []
-        self.VQF = []
 
         if basis == 'HV':  # Stokes calculation for HV basis
             UH, UV = self.mode1, self.mode2
@@ -95,6 +124,8 @@ class VectorMode(object):  # Generates a vector mode as a superposition of two s
             S1 = IH - IV
             S2 = 2*ID - S0
             S3 = 2*IR - S0
+            
+            return S0, S1, S2, S3
 
         if basis == 'RL':  # Stokes calculation for RL basis
             UR, UL = self.mode1, self.mode2
@@ -119,7 +150,7 @@ def SOP(S0, S1, S2, S3, elres, dx, intmap, sopmap):
     s0, s1, s2, s3 = resize(S0, (elres, elres), anti_aliasing=True), resize(S1, (elres, elres), anti_aliasing=True), \
                      resize(S2, (elres, elres), anti_aliasing=True), resize(S3, (elres, elres), anti_aliasing=True)
                      
-    s1, s2, s3 = s1*s0, s2*s0, s3*s0 
+    #s1, s2, s3 = s1*s0, s2*s0, s3*s0 
 
     L_hyp = np.hypot(s1, s2)
     h = np.sqrt((np.sqrt(s1 ** 2 + s2 ** 2 + s3 ** 2) - L_hyp) / 2)*np.shape(S0)[0]/elres # Semi-minor axis
@@ -130,7 +161,7 @@ def SOP(S0, S1, S2, S3, elres, dx, intmap, sopmap):
     ha_temp=s3;
     for i in range(0,h.shape[0]):
         for j in range(0,h.shape[1]):
-            if abs(ha_temp[i,j])<=0.27:
+            if abs(ha_temp[i,j])<=0.2:
                 ha_temp[i,j]=0
             else:
                 ha_temp[i,j]=np.sign(s3[i,j])
@@ -149,8 +180,8 @@ def SOP(S0, S1, S2, S3, elres, dx, intmap, sopmap):
     ax.imshow(S0, intmap)
     #
     ec = EllipseCollection(w, h, np.rad2deg(Psi), units='xy', offsets=XY,
-                           transOffset=ax.transData, cmap=sopmap, clim=[-1, 1], facecolors='none', lw=3)
-    ec.set_array(Ha.ravel())
+                           transOffset=ax.transData, cmap=sopmap, clim=[-1, 1], facecolors='none', lw=2)
+    ec.set_array(s3.ravel())
     #
     ax.add_collection(ec)
     ax.autoscale_view()
@@ -350,6 +381,7 @@ def Zernike(n, m, rho, PHI, rho_max):
         Z = np.sqrt(2 * (n + 1)) * R * np.sin(m * PHI)
 
     Z[rho > 1] = 0
+    # Z = Z/np.max(Z)*2*np.pi
 
     out = Z
 
@@ -374,8 +406,7 @@ def FractionalOAM(X, Y, w0, M, a, th, N):
                                 np.exp(1j*a*(m-ldx)))
                                     
                                          
-        l_idx, p_idx = int(ldx), int(np.floor((abs(M) + (N/2) - abs(ldx))/2))*0
-        p[count] = p_idx*0       
+        l_idx, p_idx = int(ldx), int(np.floor((abs(M) + (N/2) - abs(ldx))/2))     
 
         LG = np.sqrt((2 * math.factorial(p_idx)) / (math.pi * math.factorial(abs(l_idx) + p_idx))) * \
                       ((np.sqrt(2) * R) / w0) ** abs(l_idx) * \
@@ -391,5 +422,111 @@ def FractionalOAM(X, Y, w0, M, a, th, N):
     return U, c, p
                                           
         
-        
+def Conv_2D(U1, U2):
+    count = 0
+    out = np.zeros_like(U1, dtype=complex)
+    for i in range(np.shape(U1)[0]):
+        for j in range(np.shape(U1)[1]):
+            for a in range(np.shape(U2)[0]):
+                for b in range(np.shape(U2)[1]):
+                    out[i, j] += U1[i, j]*U2[a, b]
+                    
+        print('Convolving ... ' + str(np.round(count/np.shape(U1)[0]*100,2)) + ' % done')
+        count += 1
+                    
+    return out
 
+def Quiver(S1, S2, S3, elres):
+    
+    x = np.linspace(-elres/2, elres/2, elres)
+    X, Y = np.meshgrid(x, x)
+    
+    s1 = resize(S1, (elres, elres), anti_aliasing=True)
+    s2 = resize(S2, (elres, elres), anti_aliasing=True)
+    s3 = resize(S3, (elres, elres), anti_aliasing=True)
+    
+    ax = plt.figure().add_subplot(projection='3d')
+    q = ax.quiver(X, Y, np.zeros_like(X), s1, s2, s3, length=1, normalize = True, linewidths=1.5, cmap='jet')
+    q.set_array(np.ravel(X))
+    ax.set_zlim([-2, 2])
+    # ax.set_xlim([-2, 2])
+    # ax.set_ylim([-2, 2])
+    ax.view_init(elev=45, azim=90)
+    plt.axis('off')
+    plt.show()
+    
+def FrozenWave(R, TH, k, Q, L, Fz, z, l):
+    
+    # Generates beam with on axis intensity approximating function Fz
+    
+    
+    c = 2.99e8 # Phase velocity of light
+    
+    N = int(abs((k - Q)*(L/(2*np.pi))))# Calculates maximum number of terms
+    if N > 50:
+        N = 50
+    # print(N)
+    z_range = np.linspace(0, L, np.shape(Fz)[0]) # Creates z axis for integration
+    n_range = np.linspace(-N, N, 2*N+1) # Creates indeces to sum over
+    
+    Psi = np.zeros_like(R)
+    
+    for n in n_range:
+    
+        An = (1/L)*np.sum(Fz*np.exp(-1j*(2*np.pi*n*z_range)/L)) # Calculate Fourier coefficients
+        krn = np.sqrt((k)**2 - (Q  + 2*np.pi/L*n)**2)
+        Psi = Psi + np.exp(1j*Q*z)*An*scipy.special.jv(abs(l), krn*R)* \
+                    np.exp(1j*l*TH)*np.exp(1j*2*np.pi/L*n*z) # Performs summation                   
+                    
+        
+    return Psi
+
+def FrozenRing(R, TH, k, Q, L, Fz, z, l, f, dr):
+    
+    # Generates beam with far field on axis intensity approximating function Fz
+    
+    N = int(abs((k - Q)*(L/(2*np.pi))))# Calculates maximum number of terms
+    if N > 200:
+        N = 200
+    # print(N)
+    z_range = np.linspace(0, L, np.shape(Fz)[0]) # Creates z axis for integration
+    n_range = np.linspace(-N, N, 2*N+1) # Creates indeces to sum over
+    
+    Psi = np.zeros_like(R, dtype=complex)
+    
+    for n in n_range:
+    
+        An = (1/L)*np.sum(Fz*np.exp(-1j*(2*np.pi*n*z_range)/L)) # Calculate Fourier coefficients
+        krn = np.sqrt((k)**2 - (Q  + 2*np.pi/L*n)**2)
+ 
+        Rn = f*np.tan(np.arcsin(krn/k))
+        ring = np.ones_like(R)*An*np.exp(1j*l*TH)
+        ring[R > Rn + dr] = 0
+        ring[R < Rn - dr] = 0
+        Psi = Psi + ring
+        Psi = Psi/np.max(abs(Psi))
+                    
+        
+    return Psi
+
+def TransverseCones(U, V, W, C, int_map):
+    
+    X, Y = Grid(np.shape(U)[1], np.shape(U)[0], 1)
+    
+    fig = go.Figure()
+
+    for i in range(np.shape(X)[0]):
+        for j in range(np.shape(X)[1]):
+            fig.add_trace(go.Cone(x=[X[i,j]],y=[Y[i,j]],z=[0],u=[U[i,j]],v=[V[i,j]],w=[W[i,j]],colorscale=int_map,cmin=C[i,j], cmax=C[i,j]+1))
+    
+            
+    fig.update_layout(scene=dict(aspectmode="data",
+                                  camera_eye=dict(x=0.05, y=-2.6, z=2)),
+                      margin=dict(t=0, b=0, l=0, r=0))
+    
+    fig.show()
+
+    
+    
+    
+    

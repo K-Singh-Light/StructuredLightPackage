@@ -21,7 +21,7 @@ def Crop_Array(Image, height, width): # Crops array to desired heigh and width
 
     return out
 
-def Exp_SOP(R, L, H, D, back, crop, elres, el_map, int_map, fmt, centered):  # Generates polarization plot from Stokes intensities
+def Exp_SOP(R, L, H, D, back, crop, elres, el_map, int_map, fmt):  # Generates polarization plot from Stokes intensities
 
     if fmt == 'Image':
         R, L, H, D = color.rgb2gray(image.imread(R)), color.rgb2gray(image.imread(L)), \
@@ -77,10 +77,10 @@ def Exp_SOP(R, L, H, D, back, crop, elres, el_map, int_map, fmt, centered):  # G
     h = np.sqrt((np.sqrt(s1**2 + s2**2 + s3**2) - L_hyp)/2)*np.shape(Int)[0]/elres
     w = np.sqrt((np.sqrt(s1**2 + s2**2 + s3**2) + L_hyp)/2)*np.shape(Int)[0]/elres
     Psi = -np.angle(s1 + 1j*s2)/2
-    ha_temp=s3;
+    ha_temp=s3
     for i in range(0,h.shape[0]):
         for j in range(0,h.shape[1]):
-            if abs(ha_temp[i,j])<=0.05:
+            if abs(ha_temp[i,j])<=0.2:
                 ha_temp[i,j]=0
             else:
                 ha_temp[i,j]=np.sign(s3[i,j])
@@ -95,14 +95,15 @@ def Exp_SOP(R, L, H, D, back, crop, elres, el_map, int_map, fmt, centered):  # G
     ax.imshow(Int, cmap=int_map)
     ec = EllipseCollection(w, h, np.rad2deg(Psi), units='xy', offsets=XY,
                            transOffset=ax.transData, cmap=el_map,  clim=[-1, 1],
-                           facecolors='none', linewidth=3)
+                           facecolors='none', linewidth=1.5)
     ec.set_array(Ha.ravel())
     ax.add_collection(ec)
     ax.autoscale_view()
     plt.axis('off')
     # plt.show()
 
-    return S0, S1, S2, S3 
+    # return S0, S1, S2, S3 
+    return s0, s1, s2, s3
 
 def Sensor_SOP(R, L, H, D, back, crop, elres, el_map, int_map):  # Generates polarization plot from Stokes intensities
     
@@ -129,8 +130,8 @@ def Sensor_SOP(R, L, H, D, back, crop, elres, el_map, int_map):  # Generates pol
     H[H<0] = 0    
 
     S0 = R + L
-    S1 = -2*H + S0
-    S2 = 2*D - S0
+    S1 = 2*H - S0
+    S2 = -2*D + S0
     S3 = R - L    
 
     S0, S1, S2, S3 = S0.astype(np.float64), S1.astype(np.float64), S2.astype(np.float64), \
@@ -179,7 +180,7 @@ def Sensor_SOP(R, L, H, D, back, crop, elres, el_map, int_map):  # Generates pol
     ax.imshow(Int, cmap=int_map)
     ec = EllipseCollection(w, h, np.rad2deg(Psi), units='xy', offsets=XY,
                            transOffset=ax.transData, cmap=el_map,  clim=[-1, 1],
-                           facecolors='none', linewidth=2)
+                           facecolors='none', linewidth=1)
     ec.set_array(Ha.ravel())
     ax.add_collection(ec)
     ax.autoscale_view()
